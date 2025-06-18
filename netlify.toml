@@ -1,0 +1,5 @@
+[build]
+publish = "." # Specifies the directory to deploy. "." means the current directory.
+# For simple HTML/JS/CSS, no build command is typically needed.
+# If you had a build step (e.g., Webpack, a static site generator), you'd put it here:
+# command = "npm run build"
