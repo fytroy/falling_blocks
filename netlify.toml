@@ -1,15 +1,3 @@
 # netlify.toml
 [build]
-# This tells Netlify that the 'web_client' folder contains the files to publish.
-# Make sure this path is correct relative to the root of your Git repository.
 publish = "web_client"
-
-# If you had a build command (e.g., using a JavaScript build tool like Webpack, Vite, etc.),
-# you would put it here. For simple HTML/CSS/JS, it's usually not needed.
-# command = "npm run build"
-
-# Optional: Basic redirect rules if needed
-# [[redirects]]
-#   from = "/old-path"
-#   to = "/new-path"
-#   status = 301
