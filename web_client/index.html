@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Catch Squares Online</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="game-container">
+    <h1>Catch Squares Online</h1>
+
+    <div id="game-info">
+        <span>Score: <span id="score">0</span></span>
+        <span>Lives: <span id="lives">3</span></span>
+    </div>
+
+    <div id="game-display">
+        <div id="paddle"></div>
+        <div id="squares-container"></div>
+        <div id="game-overlay" class="hidden">
+            <p>GAME OVER!</p>
+            <p>Connect to server to play</p>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="leftButton">◀️ Left</button>
+        <button id="rightButton">Right ▶️</button>
+    </div>
+
+    <div id="status">Connecting to game server...</div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
