@@ -6,30 +6,54 @@ import json
 import threading
 import time
 
-# --- Game Constants (from your original game) ---
+# --- Game Constants ---
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 PADDLE_WIDTH = 100
-# ... other constants ...
+PADDLE_HEIGHT = 20
+SQUARE_SIZE = 30
+FALL_SPEED = 3
+INITIAL_LIVES = 3  # <-- Make sure this is defined HERE
+FONT_SIZE = 36
+FPS = 60
+
+# --- Colors ---
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+BLUE = (0, 0, 255)
+GREEN = (0, 255, 0)
 
 # --- Game State (shared between Pygame thread and WebSocket server) ---
+# This must be defined AFTER INITIAL_LIVES and other constants it uses
 game_state = {
     'paddle_x': SCREEN_WIDTH // 2 - PADDLE_WIDTH // 2,
     'squares': [], # list of {'x': int, 'y': int, 'id': str}
     'score': 0,
-    'lives': INITIAL_LIVES,
+    'lives': INITIAL_LIVES, # <--- Now INITIAL_LIVES is defined!
     'game_over': False
 }
 # To protect game_state when accessed by multiple threads
 game_state_lock = threading.Lock()
 
 # --- Game Control Input Queue ---
-# This queue will hold commands from the web client
 control_queue = []
 
-# --- Pygame Classes (Paddle, FallingSquare - from your original game) ---
+# --- Pygame Classes ---
 class Paddle(pygame.sprite.Sprite):
-    # ... your existing Paddle class ...
+    def __init__(self):
+        super().__init__()
+        self.image = pygame.Surface([PADDLE_WIDTH, PADDLE_HEIGHT])
+        self.image.fill(BLUE)
+        self.rect = self.image.get_rect()
+        # Initialize position based on constants
+        self.rect.centerx = SCREEN_WIDTH // 2
+        self.rect.bottom = SCREEN_HEIGHT - 10
+        self.speed = 8
+        # Ensure initial paddle_x in game_state reflects this
+        with game_state_lock:
+            game_state['paddle_x'] = self.rect.x
+
     def update(self):
         global game_state, game_state_lock, control_queue
         # Handle keyboard input (for desktop play)
@@ -59,22 +83,19 @@ class Paddle(pygame.sprite.Sprite):
             game_state['paddle_x'] = self.rect.x
 
 class FallingSquare(pygame.sprite.Sprite):
-    # ... your existing FallingSquare class ...
     def __init__(self, square_id):
         super().__init__()
         self.image = pygame.Surface([SQUARE_SIZE, SQUARE_SIZE])
         self.image.fill(GREEN)
         self.rect = self.image.get_rect()
         self.rect.x = random.randrange(0, SCREEN_WIDTH - SQUARE_SIZE)
-        self.rect.y = random.randrange(-100, -SQUARE_SIZE)
+        self.rect.y = random.randrange(-100, -SQUARE_SIZE) # Start above screen
         self.speed = FALL_SPEED
         self.id = square_id # Unique ID for client to track
 
     def update(self):
         self.rect.y += self.speed
-        # Instead of killing directly, mark for removal and let game() handle
-        # This is simplified for shared state. Realistically, game() loop would manage this.
-        pass
+        # The game() loop will handle off-screen removal based on rect.top > SCREEN_HEIGHT
 
 # --- WebSocket Server Logic ---
 connected_clients = set()
@@ -94,12 +115,9 @@ async def websocket_handler(websocket, path):
             data = json.loads(message)
             if data.get('type') == 'control':
                 direction = data.get('direction')
-                # Add control to the queue for the Pygame loop to process
                 with game_state_lock:
                     control_queue.append(direction)
-                    # print(f"Received control: {direction}")
-            # You could handle other message types here (e.g., restart game)
-    except websockets.exceptions.ConnectionClosedOK:
+        except websockets.exceptions.ConnectionClosedOK:
         print(f"Client {websocket.remote_address} connection closed normally.")
     except Exception as e:
         print(f"WebSocket error with {websocket.remote_address}: {e}")
@@ -109,11 +127,14 @@ async def websocket_handler(websocket, path):
 async def send_game_state_to_clients():
     global game_state
     while True:
-        await asyncio.sleep(1/FPS) # Send updates at game FPS
+        # Send updates at approximately game FPS, but ensure smooth loop
+        # A simple sleep for FPS interval might not align perfectly with game ticks
+        # but is sufficient for this example.
+        await asyncio.sleep(1/FPS)
         if connected_clients:
             with game_state_lock:
                 # Create a serializable state for the client
-                client_squares = [{'x': sq.rect.x, 'y': sq.rect.y, 'id': sq.id} for sq in game_state['squares']]
+                client_squares = [{'x': sq['x'], 'y': sq['y'], 'id': sq['id']} for sq in game_state['squares']]
                 current_state = {
                     'paddle_x': game_state['paddle_x'],
                     'squares': client_squares,
@@ -122,14 +143,14 @@ async def send_game_state_to_clients():
                     'game_over': game_state['game_over']
                 }
             message = json.dumps(current_state)
-            # print("Sending state:", current_state) # For debugging
-            await asyncio.wait([client.send(message) for client in connected_clients])
+            # Send to all connected clients
+            await asyncio.wait([client.send(message) for client in connected_clients], return_when=asyncio.ALL_COMPLETED)
 
 def run_websocket_server(loop):
     asyncio.set_event_loop(loop)
     start_server = websockets.serve(websocket_handler, "0.0.0.0", 5000) # Listen on all interfaces
     loop.run_until_complete(start_server)
-    loop.run_until_complete(send_game_state_to_clients()) # Start sending state
+    loop.run_until_complete(send_game_state_to_clients()) # Start sending state in parallel
     loop.run_forever()
 
 # --- Pygame Game Loop Function ---
@@ -143,7 +164,7 @@ def game():
     font = pygame.font.Font(None, FONT_SIZE)
 
     all_sprites = pygame.sprite.Group()
-    falling_squares = pygame.sprite.Group() # Pygame's internal group
+    falling_squares_pygame_group = pygame.sprite.Group() # Pygame's internal group
 
     paddle = Paddle()
     all_sprites.add(paddle)
@@ -163,30 +184,31 @@ def game():
                 square_id_counter += 1
                 new_square = FallingSquare(f"sq_{square_id_counter}")
                 all_sprites.add(new_square)
-                falling_squares.add(new_square) # Add to Pygame's group
+                falling_squares_pygame_group.add(new_square) # Add to Pygame's group
 
         with game_state_lock:
             if not game_state['game_over']:
-                all_sprites.update() # Update Pygame sprites
+                all_sprites.update() # Update Pygame sprites (including paddle and squares)
 
                 # Check for collisions between paddle and falling squares
-                caught_squares = pygame.sprite.spritecollide(paddle, falling_squares, True)
+                caught_squares = pygame.sprite.spritecollide(paddle, falling_squares_pygame_group, True)
                 for square in caught_squares:
                     game_state['score'] += 1
 
                 # Check for squares that went off screen (missed)
                 missed_squares_to_remove = []
-                for square in falling_squares: # Iterate directly over Pygame group
+                for square in falling_squares_pygame_group: # Iterate directly over Pygame group
                     if square.rect.top > SCREEN_HEIGHT:
                         game_state['lives'] -= 1
                         missed_squares_to_remove.append(square)
                         if game_state['lives'] <= 0:
                             game_state['game_over'] = True
                 for square in missed_squares_to_remove:
-                    square.kill() # Remove from all_sprites and falling_squares groups
+                    square.kill() # Remove from all_sprites and falling_squares_pygame_group
 
-                # Update the shared game_state['squares'] list
-                game_state['squares'] = [{'x': sq.rect.x, 'y': sq.rect.y, 'id': sq.id} for sq in falling_squares]
+                # Update the shared game_state['squares'] list for the client
+                # Convert Pygame sprite objects to simple dicts for JSON serialization
+                game_state['squares'] = [{'x': sq.rect.x, 'y': sq.rect.y, 'id': sq.id} for sq in falling_squares_pygame_group]
 
                 if game_state['lives'] <= 0:
                     game_state['game_over'] = True
@@ -203,7 +225,7 @@ def game():
 
         if game_state['game_over']:
             game_over_text = font.render("GAME OVER!", True, RED)
-            restart_text = font.render("Press 'R' to Restart", True, WHITE)
+            restart_text = font.render("Press 'R' to Restart or 'Q' to Quit", True, WHITE)
             text_rect = game_over_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20))
             restart_rect = restart_text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 20))
             screen.blit(game_over_text, text_rect)
@@ -211,19 +233,21 @@ def game():
 
             keys = pygame.key.get_pressed()
             if keys[pygame.K_r]:
-                # Reset game
+                # Reset game state
                 with game_state_lock:
                     game_state['score'] = 0
                     game_state['lives'] = INITIAL_LIVES
                     game_state['game_over'] = False
-                    all_sprites.empty()
-                    falling_squares.empty()
-                    paddle = Paddle()
-                    all_sprites.add(paddle)
-                    game_state['paddle_x'] = paddle.rect.x # Update initial paddle x
-                    game_state['squares'] = []
-        elif keys[pygame.K_q]: # Check for Q outside game_over block
-            running = False
+                    game_state['squares'] = [] # Clear client's squares
+
+                # Clear Pygame sprite groups and re-create paddle
+                all_sprites.empty()
+                falling_squares_pygame_group.empty()
+                paddle = Paddle()
+                all_sprites.add(paddle)
+                # No need to update game_state['paddle_x'] here, Paddle.__init__ does it
+            elif keys[pygame.K_q]:
+                running = False
 
 
         pygame.display.flip()
@@ -232,12 +256,14 @@ def game():
     pygame.quit()
 
 if __name__ == "__main__":
-    # Install websockets: pip install websockets
     # Start the WebSocket server in a separate thread
     websocket_loop = asyncio.new_event_loop()
     websocket_thread = threading.Thread(target=run_websocket_server, args=(websocket_loop,))
-    websocket_thread.daemon = True # Allow the main program to exit even if thread is running
+    websocket_thread.daemon = True # Allow the main program to exit gracefully
     websocket_thread.start()
+
+    # Give the WebSocket thread a moment to start its event loop
+    time.sleep(1)
 
     # Run the Pygame game loop in the main thread
     game()
