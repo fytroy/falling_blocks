@@ -1,0 +1,60 @@
+
+# Dependencies
+node_modules/
+/dist
+/build
+/.pnp
+.pnp.js
+
+# Testing
+/coverage
+
+# Production
+/web_client/build
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Compiled output
+*.class
+target/
+out/
+
+# Package files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Misc
+.DS_Store
+Thumbs.db
